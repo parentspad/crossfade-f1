@@ -8,61 +8,97 @@ header{display:flex;align-items:center;justify-content:space-between;border-bott
 header img{height:56px}.tag{font-size:.7em;letter-spacing:.2em;color:var(--blue);border:1px solid var(--blue);padding:4px 8px;border-radius:2px}
 h1{font-size:2em;font-weight:700;letter-spacing:-.02em;margin:28px 0 6px}p.lead{color:var(--gray);line-height:1.5;margin:0 0 22px}
 label{display:block;font-size:.75em;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin:18px 0 6px}
-input,select{width:100%;font:inherit;font-size:1.05em;padding:14px;background:#111;color:var(--white);border:1px solid #333;border-radius:4px}
-input:focus,select:focus{outline:none;border-color:var(--blue)}
+input{width:100%;font:inherit;font-size:1.05em;padding:14px;background:#111;color:var(--white);border:1px solid #333;border-radius:4px}
+input:focus{outline:none;border-color:var(--blue)}
 .pick{display:block;text-align:center;padding:26px 14px;border:1px dashed #444;border-radius:4px;color:var(--gray);cursor:pointer;text-transform:none;letter-spacing:0;font-size:1em}
 .pick b{color:var(--white);display:block;font-size:1.1em;margin-bottom:4px}#files{display:none}
 button{width:100%;margin-top:22px;padding:16px;font:inherit;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:var(--blue);color:#000;border:0;border-radius:4px}
 button:disabled{opacity:.4}.f{background:#111;border:1px solid #222;border-radius:4px;padding:10px 12px;margin-top:8px;font-size:.9em}
 .f small{color:#888;display:block;margin-top:2px}.bar{height:4px;background:#222;margin-top:8px}.bar i{display:block;height:100%;width:0;background:var(--blue);transition:width .2s}
-.ok{color:var(--blue)}.err{color:#ff5a5a}#done{margin-top:20px;font-weight:700;color:var(--blue)}footer{margin-top:40px;font-size:.75em;color:#666;text-align:center}
+.ok{color:var(--blue)}.err{color:#ff5a5a}#done{margin-top:20px;font-weight:700;color:var(--blue)}footer{margin-top:40px;font-size:.75em;color:#666;text-align:center;line-height:1.6}footer b{color:#999;font-weight:600}.f button{width:auto;margin:8px 0 0;padding:8px 12px;font-size:.75em}
 </style></head><body><main>
 <header><img src="assets/crossfade-logo-white.png" alt="Crossfade Design"><span class="tag">F1 UPLOADS</span></header>
 <h1>Share your race footage.</h1>
-<p class="lead">Send us the videos and photos you shot at the track, full quality straight from your phone. We'll cut them into the race-weekend edit. Keep this page open until every bar is full.</p>
+<p class="lead">Send us the videos and photos you shot at the track, full quality straight from your phone. We sort them by race automatically from when they were shot. Keep this page open until every bar is full.</p>
 <label for="name">Your name</label><input id="name" autocomplete="name" placeholder="First and last">
-<label for="race">Race weekend</label><select id="race"><option>Loading races…</option></select>
 <label class="pick" for="files"><b>Choose videos &amp; photos</b>Tap to pick from your camera roll. Big files are fine.</label>
 <input id="files" type="file" multiple accept="video/*,image/*">
 <div id="list"></div><button id="go" disabled>Upload</button><p id="done"></p>
-<footer>A Crossfade Design tool · Files go privately to Crossfade's Drive.</footer>
+<footer>Built by <b>SimpleQuick Solutions</b> for <b>Crossfade Design</b><br>Files go privately to Crossfade's Drive.</footer>
 </main>
-<script src="https://cdn.jsdelivr.net/npm/exifr@7/dist/lite.umd.js"></script>
 <script>
-const API="https://script.google.com/macros/s/AKfycbw9HR1L6WdURqHsUBdWWMAscaZGeiRYGfxhowBDeebO83TUM7IGnEWeaaGBENAN_Hzg/exec"; // TODO: paste the Apps Script web app /exec URL here
-const READY=API.startsWith("https://script.google.com/");
-if(!READY)addEventListener("DOMContentLoaded",()=>{$("go").textContent="Uploads open soon";$("done").textContent="Uploads open soon. Check back shortly!";});
-const CHUNK=8*1024*1024, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[];
-const $=id=>document.getElementById(id);
-// Race calendar from Jolpica (Ergast successor). Default = most recent race weekend that has started.
-(async()=>{try{const y=new Date().getFullYear();
- const r=(await (await fetch(`https://api.jolpi.ca/ergast/f1/${y}/races/?limit=40`)).json()).MRData.RaceTable.Races;
- const today=new Date().toISOString().slice(0,10);let def="";
- $("race").innerHTML='<option value="">Not sure / auto-detect</option>'+r.map(x=>{const s=(x.FirstPractice||{}).date||x.date;
-  if(x.date<=today)def=x.round;return `<option value="${x.round}">${x.date.slice(5)} · ${x.raceName.replace(" Grand Prix"," GP")}</option>`}).join("");
- $("race").value=def;}catch(e){$("race").innerHTML='<option value="">Auto-detect from file dates</option>'}})();
-// Capture date: EXIF/HEIC via exifr; MOV/MP4 via mvhd atom; else File.lastModified.
-async function captureDate(f){
- try{if(f.type.startsWith("image/")){const d=await exifr.parse(f,["DateTimeOriginal","CreateDate"]);const t=d&&(d.DateTimeOriginal||d.CreateDate);if(t)return{t:new Date(t).toISOString(),src:"exif"}}
-  else{for(const [a,b] of [[0,4<<20],[Math.max(0,f.size-(4<<20)),f.size]]){const u=new Uint8Array(await f.slice(a,b).arrayBuffer());
-   for(let i=0;i<u.length-24;i++)if(u[i]==0x6d&&u[i+1]==0x76&&u[i+2]==0x68&&u[i+3]==0x64){const v=new DataView(u.buffer,i+4);
-    const s=v.getUint8(0)==1?Number(v.getBigUint64(4)):v.getUint32(4);if(s>0)return{t:new Date((s-2082844800)*1000).toISOString(),src:"quicktime"}}}}}catch(e){}
- return{t:new Date(f.lastModified).toISOString(),src:"lastModified"}}
-$("files").onchange=()=>{const all=[...$("files").files];picked=all.filter(f=>/^(image|video)\//.test(f.type)&&f.size>0&&f.size<=MAX_BYTES).slice(0,MAX_FILES);
- if(picked.length<all.length)alert(`Skipped ${all.length-picked.length} file(s): photos/videos only, up to 10 GB each, ${MAX_FILES} per visit.`);$("list").innerHTML="";
- picked.forEach(f=>{const d=document.createElement("div");d.className="f";d.innerHTML=`${f.name}<small>${(f.size/1048576).toFixed(1)} MB · ready</small><div class="bar"><i></i></div>`;f.el=d;$("list").append(d)});
- $("go").disabled=!picked.length||!READY};
+const API="https://script.google.com/macros/s/AKfycbw9HR1L6WdURqHsUBdWWMAscaZGeiRYGfxhowBDeebO83TUM7IGnEWeaaGBENAN_Hzg/exec";
+const CHUNK=8*1024*1024, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[], busy=false;
+const $=id=>document.getElementById(id), sleep=ms=>new Promise(z=>setTimeout(z,ms));
+$("name").value=localStorage.getItem("f1name")||"";
+// ---- capture time, read in the browser (no libraries) ----
+function tiffDate(u,t){ // u: Uint8Array, t: offset of TIFF header. Returns {dt,off} or null
+ const v=new DataView(u.buffer,u.byteOffset),le=u[t]==0x49,g16=o=>v.getUint16(t+o,le),g32=o=>v.getUint32(t+o,le);
+ const str=(o,n)=>String.fromCharCode(...u.subarray(t+o,t+o+n)).replace(/\0.*$/,"");
+ const ifd=o=>{const m={},n=g16(o);for(let i=0;i<n;i++){const e=o+2+i*12,tag=g16(e),cnt=g32(e+4);m[tag]=cnt<=4?str(e+8,cnt):str(g32(e+8),cnt);m["p"+tag]=g32(e+8)}return m};
+ const i0=ifd(g32(4)),ex=i0.p34665?ifd(i0.p34665):{};const dt=ex[36867]||ex[36868]||i0[306];
+ return dt&&/^\d{4}:\d\d:\d\d \d\d:\d\d:\d\d/.test(dt)?{dt,off:ex[36881]||ex[36880]||""}:null}
+async function exifDate(f){
+ const u=new Uint8Array(await f.slice(0,Math.min(f.size,f.type.includes("hei")?4<<20:1<<20)).arrayBuffer());
+ for(let i=0;i<u.length-14;i++)if(u[i]==0x45&&u[i+1]==0x78&&u[i+2]==0x69&&u[i+3]==0x66&&u[i+4]==0&&u[i+5]==0){ // "Exif\0\0"
+  const t=i+6;if((u[t]==0x49&&u[t+1]==0x49)||(u[t]==0x4d&&u[t+1]==0x4d)){try{const r=tiffDate(u,t);if(r){
+   const [d,h]=r.dt.split(" "),iso=d.replace(/:/g,"-")+"T"+h.slice(0,8);
+   const when=r.off?new Date(iso+r.off):new Date(iso); // no offset: phone's local time
+   if(!isNaN(when))return{t:when.toISOString(),local:iso+(r.off||""),src:"exif"}}}catch(e){}}}
+ // no EXIF block: plain date string fallback (some HEIC/PNG)
+ const m=new TextDecoder("latin1").decode(u.subarray(0,1<<20)).match(/(20\d\d):(\d\d):(\d\d) (\d\d:\d\d:\d\d)/);
+ if(m){const iso=`${m[1]}-${m[2]}-${m[3]}T${m[4]}`;return{t:new Date(iso).toISOString(),local:iso,src:"exif-text"}}
+ return null}
+async function videoDate(f){
+ for(const [a,b] of [[0,8<<20],[Math.max(0,f.size-(8<<20)),f.size]]){const u=new Uint8Array(await f.slice(a,b).arrayBuffer());
+  for(let i=0;i<u.length-24;i++)if(u[i]==0x6d&&u[i+1]==0x76&&u[i+2]==0x68&&u[i+3]==0x64){const v=new DataView(u.buffer,i+4);
+   const s=v.getUint8(0)==1?Number(v.getBigUint64(4)):v.getUint32(4);if(s>2082844800+946684800)return{t:new Date((s-2082844800)*1000).toISOString(),local:"",src:"quicktime"}}}
+ return null}
+async function captureDate(f){ // throws if the phone no longer lets us read the file
+ const r=f.type.startsWith("image/")?await exifDate(f):await videoDate(f);
+ return r||{t:new Date(f.lastModified).toISOString(),local:"",src:"lastModified"}}
+// ---- picking ----
+const key=f=>f.name+"|"+f.size;
+$("files").onchange=()=>{const all=[...$("files").files],ok=all.filter(f=>/^(image|video)\//.test(f.type)&&f.size>0&&f.size<=MAX_BYTES);
+ if(ok.length<all.length)alert(`Skipped ${all.length-ok.length} file(s): photos and videos only, up to 10 GB each.`);
+ const old=new Map(picked.map(p=>[key(p.f),p]));let next=[];
+ for(const f of ok){const p=old.get(key(f));if(p){p.f=f;old.delete(key(f));next.push(p)}else next.push({f,state:"ready"})}
+ next=[...old.values()].filter(p=>p.state=="done").concat(next).slice(0,MAX_FILES); // keep finished ones listed
+ if(ok.length>MAX_FILES)alert(`Up to ${MAX_FILES} files per visit. Reload the page for more.`);
+ picked=next;$("list").innerHTML="";
+ for(const p of picked){if(!p.el){p.el=document.createElement("div");p.el.className="f";
+  p.el.innerHTML=`<span></span><small></small><div class="bar"><i></i></div>`;p.el.firstChild.textContent=p.f.name}
+  if(p.state=="ready")show(p,`${(p.f.size/1048576).toFixed(1)} MB · ready`);$("list").append(p.el)}
+ refresh()};
+function show(p,html,pct){p.el.querySelector("small").innerHTML=html;if(pct!=null)p.el.querySelector("i").style.width=pct+"%"}
+function refresh(){const left=picked.filter(p=>p.state!="done").length;$("go").disabled=busy||!left;$("go").textContent=picked.some(p=>p.state=="failed")?"Retry failed uploads":"Upload"}
+// ---- upload: one Drive resumable session per file, reused on retry ----
+async function committed(p){ // ask Drive how much it already has
+ const x=await fetch(p.url,{method:"PUT",headers:{"Content-Range":`bytes */${p.f.size}`}});
+ if(x.ok)return p.f.size;if(x.status==308){const r=x.headers.get("Range");return r?+r.split("-")[1]+1:(p.sent||0)}
+ if(x.status==404||x.status==410){p.url=null;p.sent=0;return 0}throw "status "+x.status}
+async function upload(p,name){const f=p.f;
+ if(!p.cd){show(p,"Reading date…");p.cd=await captureDate(f)}
+ if(!p.url){show(p,"Starting…");let j;for(let t=0;;t++){try{j=await (await fetch(API,{method:"POST",body:JSON.stringify({name,file:f.name,type:f.type,size:f.size,
+   captured:p.cd.t,capturedLocal:p.cd.local,dateSource:p.cd.src,lastModified:new Date(f.lastModified).toISOString(),tz:Intl.DateTimeFormat().resolvedOptions().timeZone})})).json();
+   if(j.url||j.dup)break;if(!/Busy/.test(j.error)||t>5)throw j.error||"no session"}catch(e){if(t>5)throw e}await sleep(4000*(t+1))}
+  p.folder=j.folder;if(j.dup)return;p.url=j.url;p.sent=0}
+ let s=p.sent?await committed(p):0;if(!p.url)return upload(p,name);
+ while(s<f.size){const e=Math.min(s+CHUNK,f.size);let x;
+  try{x=await fetch(p.url,{method:"PUT",headers:{"Content-Range":`bytes ${s}-${e-1}/${f.size}`},body:f.slice(s,e)})}
+  catch(err){if(err&&err.name=="NotReadableError")throw err;x=null}
+  if(x&&(x.ok||x.status==308)){p.sent=s=x.ok?f.size:e;}
+  else{if(x&&(x.status==404||x.status==410)){p.url=null;return upload(p,name)}
+   p.tries=(p.tries||0)+1;if(p.tries>8)throw "network";await sleep(2000*p.tries);s=await committed(p);if(!p.url)return upload(p,name);continue}
+  p.tries=0;show(p,`${Math.round(s/f.size*100)}% · ${p.folder}`,s/f.size*100)}}
 $("go").onclick=async()=>{const n=$("name").value.trim();if(!n){$("name").focus();return alert("Please enter your name")}
- $("go").disabled=true;let good=0;
- for(const f of picked){const st=f.el.querySelector("small"),bar=f.el.querySelector("i");
-  try{st.textContent="Reading date…";const cd=await captureDate(f);
-   const r=await fetch(API,{method:"POST",body:JSON.stringify({name:n,file:f.name,type:f.type,size:f.size,captured:cd.t,dateSource:cd.src,lastModified:new Date(f.lastModified).toISOString(),race:$("race").value})});
-   const j=await r.json();if(!j.url)throw j.error||"no session";
-   for(let s=0;s<f.size;s+=CHUNK){const e=Math.min(s+CHUNK,f.size);let tries=0;
-    while(true){try{const x=await fetch(j.url,{method:"PUT",headers:{"Content-Range":`bytes ${s}-${e-1}/${f.size}`},body:f.slice(s,e)});
-     if(x.ok||x.status==308)break;throw x.status}catch(_){if(++tries>6)throw "network";await new Promise(z=>setTimeout(z,1500*tries))}}
-    bar.style.width=(e/f.size*100)+"%";st.textContent=`${Math.round(e/f.size*100)}% · ${j.folder}`}
-   st.innerHTML=`<span class="ok">✓ Uploaded</span> · ${j.folder}`;good++}
-  catch(err){st.innerHTML='<span class="err">Upload failed. Tap Upload to retry.</span>';$("go").disabled=false}}
- $("done").textContent=good==picked.length?"Got it all. Thanks for shooting!":`${good} of ${picked.length} uploaded.`};
+ localStorage.setItem("f1name",n);busy=true;refresh();let lock=null;try{lock=await navigator.wakeLock?.request("screen")}catch(e){}
+ for(const p of picked){if(p.state=="done")continue;p.tries=0;
+  try{await upload(p,n);p.state="done";show(p,`<span class="ok">✓ Uploaded</span> · ${p.folder}`,100)}
+  catch(err){p.state="failed";const lost=err&&(err.name=="NotReadableError"||err.name=="NotFoundError");
+   show(p,lost?'<span class="err">Your phone stopped sharing this file. Tap "Choose videos &amp; photos" and pick it again, then Retry.</span>'
+    :'<span class="err">Upload paused (connection). Tap Retry. It picks up where it left off.</span>')}}
+ busy=false;lock?.release?.();const good=picked.filter(p=>p.state=="done").length;
+ $("done").textContent=good==picked.length?"Got it all. Thanks for shooting!":`${good} of ${picked.length} uploaded.`;refresh()};
+addEventListener("beforeunload",e=>{if(busy){e.preventDefault();e.returnValue=""}});
 </script></body></html>
