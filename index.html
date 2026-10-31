@@ -24,12 +24,12 @@ button:disabled{opacity:.4}.f{background:#111;border:1px solid #222;border-radiu
 <label class="pick" for="files"><b>Choose videos &amp; photos</b>Tap to pick from your camera roll. Big files are fine.</label>
 <input id="files" type="file" multiple accept="video/*,image/*">
 <div id="list"></div><button id="go" disabled>Upload</button><p id="done"></p>
-<footer>Built by <b>SimpleQuick Solutions</b> for <b>Crossfade Design</b><br>Files go privately to Crossfade's Drive.</footer>
+<footer>Built by <b>SimpleQuick Solutions</b> for <b>Crossfade Design</b><br>Files go privately to Crossfade's storage.</footer>
 </main>
 <script>
 const API="https://script.google.com/macros/s/AKfycbw9HR1L6WdURqHsUBdWWMAscaZGeiRYGfxhowBDeebO83TUM7IGnEWeaaGBENAN_Hzg/exec";
-const CHUNK=8*1024*1024, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[], busy=false;
-const $=id=>document.getElementById(id), sleep=ms=>new Promise(z=>setTimeout(z,ms));
+const CHUNK=10485760 /* 10 MiB: multiple of 320 KiB (OneDrive) and 256 KiB (Drive) */, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[], busy=false;
+const esc=t=>String(t).replace(/[&<>"]/g,c=>"&#"+c.charCodeAt(0)+";"), $=id=>document.getElementById(id), sleep=ms=>new Promise(z=>setTimeout(z,ms));
 $("name").value=localStorage.getItem("f1name")||"";
 // ---- capture time, read in the browser (no libraries) ----
 function tiffDate(u,t){ // u: Uint8Array, t: offset of TIFF header. Returns {dt,off} or null
@@ -73,21 +73,29 @@ $("files").onchange=()=>{const all=[...$("files").files],ok=all.filter(f=>/^(ima
 function show(p,html,pct){p.el.querySelector("small").innerHTML=html;if(pct!=null)p.el.querySelector("i").style.width=pct+"%"}
 function refresh(){const left=picked.filter(p=>p.state!="done").length;$("go").disabled=busy||!left;$("go").textContent=picked.some(p=>p.state=="failed")?"Retry failed uploads":"Upload"}
 // ---- upload: one Drive resumable session per file, reused on retry ----
-async function committed(p){ // ask Drive how much it already has
- const x=await fetch(p.url,{method:"PUT",headers:{"Content-Range":`bytes */${p.f.size}`}});
- if(x.ok)return p.f.size;if(x.status==308){const r=x.headers.get("Range");return r?+r.split("-")[1]+1:(p.sent||0)}
- if(x.status==404||x.status==410){p.url=null;p.sent=0;return 0}throw "status "+x.status}
+const isGoogle=u=>/googleapis\.com/.test(u);
+async function committed(p){ // ask the storage how much it already has
+ if(isGoogle(p.url)){const x=await fetch(p.url,{method:"PUT",headers:{"Content-Range":`bytes */${p.f.size}`}});
+  if(x.ok)return p.f.size;if(x.status==308){const r=x.headers.get("Range");return r?+r.split("-")[1]+1:(p.sent||0)}
+  if(x.status==404||x.status==410){p.url=null;p.sent=0;return 0}throw "status "+x.status}
+ const x=await fetch(p.url); // OneDrive: GET uploadUrl -> nextExpectedRanges
+ if(x.status==404||x.status==410){p.url=null;p.sent=0;return 0}
+ if(!x.ok)throw "status "+x.status;const j=await x.json(),r=(j.nextExpectedRanges||[])[0];
+ return r?+r.split("-")[0]:p.f.size}
 async function upload(p,name){const f=p.f;
  if(!p.cd){show(p,"Reading date…");p.cd=await captureDate(f)}
- if(!p.url){show(p,"Starting…");let j;for(let t=0;;t++){try{j=await (await fetch(API,{method:"POST",body:JSON.stringify({name,file:f.name,type:f.type,size:f.size,
-   captured:p.cd.t,capturedLocal:p.cd.local,dateSource:p.cd.src,lastModified:new Date(f.lastModified).toISOString(),tz:Intl.DateTimeFormat().resolvedOptions().timeZone})})).json();
-   if(j.url||j.dup)break;if(!/Busy/.test(j.error)||t>5)throw j.error||"no session"}catch(e){if(t>5)throw e}await sleep(4000*(t+1))}
+ if(!p.url){show(p,"Starting…");let j,last="";for(let t=0;;t++){try{
+   const res=await fetch(API,{method:"POST",body:JSON.stringify({name,file:f.name,type:f.type,size:f.size,
+    captured:p.cd.t,capturedLocal:p.cd.local,dateSource:p.cd.src,lastModified:new Date(f.lastModified).toISOString(),tz:Intl.DateTimeFormat().resolvedOptions().timeZone})});
+   j=await res.json().catch(()=>({error:"Server answered "+res.status}));if(j.url||j.dup)break;last=j.error||"no upload session"}
+   catch(e){last="Can't reach the server ("+(e.message||e)+")"}
+   if(t>=4)throw {msg:last};show(p,`<span class="err">${esc(last)}</span> · retrying (${t+1}/4)…`);await sleep(4000*(t+1))}
   p.folder=j.folder;if(j.dup)return;p.url=j.url;p.sent=0}
  let s=p.sent?await committed(p):0;if(!p.url)return upload(p,name);
  while(s<f.size){const e=Math.min(s+CHUNK,f.size);let x;
   try{x=await fetch(p.url,{method:"PUT",headers:{"Content-Range":`bytes ${s}-${e-1}/${f.size}`},body:f.slice(s,e)})}
   catch(err){if(err&&err.name=="NotReadableError")throw err;x=null}
-  if(x&&(x.ok||x.status==308)){p.sent=s=x.ok?f.size:e;}
+  if(x&&(x.ok||x.status==308)){p.sent=s=(x.status==200||x.status==201)?f.size:e;}
   else{if(x&&(x.status==404||x.status==410)){p.url=null;return upload(p,name)}
    p.tries=(p.tries||0)+1;if(p.tries>8)throw "network";await sleep(2000*p.tries);s=await committed(p);if(!p.url)return upload(p,name);continue}
   p.tries=0;show(p,`${Math.round(s/f.size*100)}% · ${p.folder}`,s/f.size*100)}}
@@ -97,7 +105,7 @@ $("go").onclick=async()=>{const n=$("name").value.trim();if(!n){$("name").focus(
   try{await upload(p,n);p.state="done";show(p,`<span class="ok">✓ Uploaded</span> · ${p.folder}`,100)}
   catch(err){p.state="failed";const lost=err&&(err.name=="NotReadableError"||err.name=="NotFoundError");
    show(p,lost?'<span class="err">Your phone stopped sharing this file. Tap "Choose videos &amp; photos" and pick it again, then Retry.</span>'
-    :'<span class="err">Upload paused (connection). Tap Retry. It picks up where it left off.</span>')}}
+    :'<span class="err">Upload paused'+(err&&err.msg?': '+esc(err.msg):' (connection)')+'. Tap Retry. It picks up where it left off.</span>')}}
  busy=false;lock?.release?.();const good=picked.filter(p=>p.state=="done").length;
  $("done").textContent=good==picked.length?"Got it all. Thanks for shooting!":`${good} of ${picked.length} uploaded.`;refresh()};
 addEventListener("beforeunload",e=>{if(busy){e.preventDefault();e.returnValue=""}});
