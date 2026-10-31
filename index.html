@@ -29,7 +29,7 @@ button:disabled{opacity:.4}.f{background:#111;border:1px solid #222;border-radiu
 </main>
 <script src="https://cdn.jsdelivr.net/npm/exifr@7/dist/lite.umd.js"></script>
 <script>
-const API="APPS_SCRIPT_URL"; // TODO: paste the Apps Script web app /exec URL here
+const API="https://script.google.com/macros/s/AKfycbw9HR1L6WdURqHsUBdWWMAscaZGeiRYGfxhowBDeebO83TUM7IGnEWeaaGBENAN_Hzg/exec"; // TODO: paste the Apps Script web app /exec URL here
 const READY=API.startsWith("https://script.google.com/");
 if(!READY)addEventListener("DOMContentLoaded",()=>{$("go").textContent="Uploads open soon";$("done").textContent="Uploads open soon. Check back shortly!";});
 const CHUNK=8*1024*1024, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[];
