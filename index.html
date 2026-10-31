@@ -15,7 +15,7 @@ input:focus{outline:none;border-color:var(--blue)}
 button{width:100%;margin-top:22px;padding:16px;font:inherit;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:var(--blue);color:#000;border:0;border-radius:4px}
 button:disabled{opacity:.4}.f{background:#111;border:1px solid #222;border-radius:4px;padding:10px 12px;margin-top:8px;font-size:.9em}
 .f small{color:#888;display:block;margin-top:2px}.bar{height:4px;background:#222;margin-top:8px}.bar i{display:block;height:100%;width:0;background:var(--blue);transition:width .2s}
-.ok{color:var(--blue)}.err{color:#ff5a5a}#done{margin-top:20px;font-weight:700;color:var(--blue)}footer{margin-top:40px;font-size:.75em;color:#666;text-align:center;line-height:1.6}footer b{color:#999;font-weight:600}.f button{width:auto;margin:8px 0 0;padding:8px 12px;font-size:.75em}
+.ok{color:var(--blue)}.err{color:#ff5a5a}#done{margin-top:20px;font-weight:700;color:var(--blue)}footer{margin-top:40px;font-size:.75em;color:#666;text-align:center;line-height:1.6}footer b{color:#999;font-weight:600}.f button.retry{display:block;width:100%;text-align:left;background:none;border:1px solid #ff5a5a;color:#ff5a5a;border-radius:8px}.f button{width:auto;margin:8px 0 0;padding:8px 12px;font-size:.75em}
 </style></head><body><main>
 <header><img src="assets/crossfade-logo-white.png" alt="Crossfade Design"><span class="tag">F1 UPLOADS</span></header>
 <h1>Share your race footage.</h1>
@@ -23,12 +23,12 @@ button:disabled{opacity:.4}.f{background:#111;border:1px solid #222;border-radiu
 <label for="name">Your name</label><input id="name" autocomplete="name" placeholder="First and last">
 <label class="pick" for="files"><b>Choose videos &amp; photos</b>Tap to pick from your camera roll. Big files are fine.</label>
 <input id="files" type="file" multiple accept="video/*,image/*">
-<div id="list"></div><button id="go" disabled>Upload</button><p id="done"></p>
+<div id="list"></div><button id="go" disabled>Upload</button><button id="retry" hidden>Retry failed uploads</button><p id="done"></p>
 <footer>Built by <b>SimpleQuick Solutions</b> for <b>Crossfade Design</b><br>Files go privately to Crossfade's storage.</footer>
 </main>
 <script>
 const API="https://script.google.com/macros/s/AKfycbw9HR1L6WdURqHsUBdWWMAscaZGeiRYGfxhowBDeebO83TUM7IGnEWeaaGBENAN_Hzg/exec";
-const CHUNK=10485760 /* 10 MiB: multiple of 320 KiB (OneDrive) and 256 KiB (Drive) */, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[], busy=false;
+const CHUNK=10485760 /* 10 MiB: multiple of 320 KiB (OneDrive) and 256 KiB (Drive) */, MAX_BYTES=10*1024**3, MAX_FILES=50; let picked=[], busy=false, active=0, lock=null;
 const esc=t=>String(t).replace(/[&<>"]/g,c=>"&#"+c.charCodeAt(0)+";"), $=id=>document.getElementById(id), sleep=ms=>new Promise(z=>setTimeout(z,ms));
 $("name").value=localStorage.getItem("f1name")||"";
 // ---- capture time, read in the browser (no libraries) ----
@@ -71,7 +71,9 @@ $("files").onchange=()=>{const all=[...$("files").files],ok=all.filter(f=>/^(ima
   if(p.state=="ready")show(p,`${(p.f.size/1048576).toFixed(1)} MB · ready`);$("list").append(p.el)}
  refresh()};
 function show(p,html,pct){p.el.querySelector("small").innerHTML=html;if(pct!=null)p.el.querySelector("i").style.width=pct+"%"}
-function refresh(){const left=picked.filter(p=>p.state!="done").length;$("go").disabled=busy||!left;$("go").textContent=picked.some(p=>p.state=="failed")?"Retry failed uploads":"Upload"}
+function refresh(){const left=picked.filter(p=>p.state!="done"&&p.state!="uploading").length,bad=picked.some(p=>p.state=="failed");
+ $("go").disabled=busy||!left;$("go").textContent="Upload";$("go").hidden=bad&&!busy&&picked.every(p=>p.state=="done"||p.state=="failed");
+ $("retry").hidden=!bad}
 // ---- upload: one Drive resumable session per file, reused on retry ----
 const isGoogle=u=>/googleapis\.com/.test(u);
 async function committed(p){ // ask the storage how much it already has
@@ -99,14 +101,21 @@ async function upload(p,name){const f=p.f;
   else{if(x&&(x.status==404||x.status==410)){p.url=null;return upload(p,name)}
    p.tries=(p.tries||0)+1;if(p.tries>8)throw "network";await sleep(2000*p.tries);s=await committed(p);if(!p.url)return upload(p,name);continue}
   p.tries=0;show(p,`${Math.round(s/f.size*100)}% · ${p.folder}`,s/f.size*100)}}
-$("go").onclick=async()=>{const n=$("name").value.trim();if(!n){$("name").focus();return alert("Please enter your name")}
- localStorage.setItem("f1name",n);busy=true;refresh();let lock=null;try{lock=await navigator.wakeLock?.request("screen")}catch(e){}
- for(const p of picked){if(p.state=="done")continue;p.tries=0;
-  try{await upload(p,n);p.state="done";show(p,`<span class="ok">✓ Uploaded</span> · ${p.folder}`,100)}
-  catch(err){p.state="failed";const lost=err&&(err.name=="NotReadableError"||err.name=="NotFoundError");
-   show(p,lost?'<span class="err">Your phone stopped sharing this file. Tap "Choose videos &amp; photos" and pick it again, then Retry.</span>'
-    :'<span class="err">Upload paused'+(err&&err.msg?': '+esc(err.msg):' (connection)')+'. Tap Retry. It picks up where it left off.</span>')}}
- busy=false;lock?.release?.();const good=picked.filter(p=>p.state=="done").length;
- $("done").textContent=good==picked.length?"Got it all. Thanks for shooting!":`${good} of ${picked.length} uploaded.`;refresh()};
-addEventListener("beforeunload",e=>{if(busy){e.preventDefault();e.returnValue=""}});
+function myName(){const n=$("name").value.trim();if(!n){$("name").focus();alert("Please enter your name");return null}localStorage.setItem("f1name",n);return n}
+async function runOne(p,n){if(p.state=="uploading"||p.state=="done")return;p.state="uploading";p.tries=0;active++;refresh();
+ if(active==1){try{lock=await navigator.wakeLock?.request("screen")}catch(e){}}
+ try{await upload(p,n);p.state="done";show(p,`<span class="ok">✓ Uploaded</span> · ${p.folder}`,100)}
+ catch(err){p.state="failed";const lost=err&&(err.name=="NotReadableError"||err.name=="NotFoundError");
+  show(p,lost?'<span class="err">Your phone stopped sharing this file. Tap "Choose videos &amp; photos" and pick it again, then tap here to retry.</span>'
+   :'<button type="button" class="retry">Upload paused'+(err&&err.msg?': '+esc(err.msg):' (connection)')+'. Tap here to retry. It picks up where it left off.</button>')}
+ finally{active--;if(!active){lock?.release?.();lock=null}summary();refresh()}}
+function summary(){if(busy||active)return;const good=picked.filter(p=>p.state=="done").length;
+ $("done").textContent=good==picked.length?"Got it all. Thanks for shooting!":`${good} of ${picked.length} uploaded.`}
+$("list").addEventListener("click",e=>{const el=e.target.closest(".f");if(!el)return;const p=picked.find(q=>q.el==el);
+ if(!p||p.state!="failed")return;const n=myName();if(n)runOne(p,n)});
+$("retry").onclick=async()=>{const n=myName();if(!n)return;for(const p of picked.filter(q=>q.state=="failed"))await runOne(p,n)};
+$("go").onclick=async()=>{const n=myName();if(!n)return;busy=true;$("done").textContent="";refresh();
+ for(const p of [...picked]){if(p.state!="ready"||!picked.includes(p))continue;await runOne(p,n)}
+ busy=false;summary();refresh()};
+addEventListener("beforeunload",e=>{if(busy||active){e.preventDefault();e.returnValue=""}});
 </script></body></html>
